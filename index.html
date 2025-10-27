@@ -417,6 +417,17 @@
             </div>
         </section>
 
+        <!-- NEW: Reset Section -->
+        <section id="resetSection" class="mt-10 pt-6 border-t border-gray-200">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Pengaturan Ulang Data Aplikasi</h2>
+            <p class="text-gray-600 mb-4">Gunakan tombol ini untuk menghapus semua data pengisian pernyataan (Langkah 2), pemetaan user (Langkah 1), dan skor kuis (Langkah 4 & 5) dari sistem untuk **seluruh pegawai**.</p>
+            <button id="resetAllDataButton" 
+                class="px-8 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-500 focus:ring-opacity-50 transition duration-150">
+                ⚠️ Reset Semua Data (Langkah 1, 2, 4 & 5)
+            </button>
+        </section>
+        <!-- END NEW: Reset Section -->
+
     </div>
 
     <!-- Firebase SDKs -->
@@ -566,6 +577,7 @@
             // Nonaktifkan juga tombol Gemini saat loading
             document.getElementById('ideaHelperButton').disabled = show;
             document.getElementById('generateLieButton').disabled = show;
+            document.getElementById('resetAllDataButton').disabled = show; // Tambahkan tombol reset
         }
 
         function updateQuizProgressDisplay() {
@@ -1398,6 +1410,87 @@ Buatkan satu pernyataan BOHONG yang terdengar nyata, spesifik, dan sulit ditebak
                 `;
             }).join('');
         }
+        
+        // --- NEW: FULL DATA RESET LOGIC ---
+        async function resetAllUserData() {
+            const confirmed = await showConfirmation(
+                "PERINGATAN KERAS: Tindakan ini akan menghapus SEMUA data pengisian (Langkah 2), data pemetaan user (Langkah 1), dan SEMUA SKOR KUIS (Langkah 4 & 5) untuk SELURUH PEGAWAI. Apakah Anda benar-benar yakin?", 
+                'YA, HAPUS SEMUA DATA', 
+                'bg-red-800 hover:bg-red-900'
+            );
+            
+            if (!confirmed) {
+                showMessage("Reset dibatalkan.", "info");
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const collectionsToReset = [
+                    { path: userMapCollectionPath, name: "Pemetaan User (Langkah 1)" },
+                    { path: submissionCollectionPath, name: "Pernyataan Pegawai (Langkah 2)" },
+                    { path: leaderboardCollectionPath, name: "Papan Skor Kuis (Langkah 4 & 5)" }
+                ];
+                
+                for (const col of collectionsToReset) {
+                    console.log(`Resetting collection: ${col.name}`);
+                    const q = query(collection(db, col.path));
+                    const snapshot = await getDocs(q);
+                    
+                    const deletePromises = [];
+                    snapshot.forEach((docSnap) => {
+                        deletePromises.push(deleteDoc(doc(db, col.path, docSnap.id)));
+                    });
+                    
+                    await Promise.all(deletePromises);
+                    console.log(`Successfully deleted ${snapshot.size} documents from ${col.name}.`);
+                }
+
+                // --- RESET LOCAL STATE AND UI FOR CURRENT USER ---
+                selectedEmployee = null;
+                employeeDisplayName = 'Pengguna Anonim'; 
+                currentScore = 0; 
+                quizzesTakenIds = new Set(); 
+                totalAccumulatedTime = 0;
+                
+                // Reset Step 1 UI
+                document.getElementById('usernameInput').value = '';
+                document.getElementById('usernameInput').disabled = false;
+                document.getElementById('validateUsernameButton').disabled = false;
+                document.getElementById('selectionStatus').innerHTML = '⚠️ Silakan masukkan Username Anda dan tekan Validasi.';
+                document.getElementById('employeeIdDisplay').classList.add('hidden');
+                
+                // Reset Step 2 UI
+                document.querySelectorAll('#step2 textarea').forEach(ta => {
+                    ta.value = '';
+                    ta.disabled = false;
+                });
+                document.getElementById('submitButton').disabled = false;
+                document.getElementById('submitButton').textContent = 'Simpan Data Pernyataan';
+                document.getElementById('step2').classList.add('opacity-50', 'pointer-events-none');
+                
+                // Reset Step 4 UI
+                document.getElementById('userScoreDisplay').textContent = 0;
+                document.getElementById('step4').classList.add('opacity-50', 'pointer-events-none');
+                document.getElementById('quizStatus').classList.remove('hidden');
+                document.getElementById('quizStatus').textContent = '❌ Akses diblokir. Harap masukkan Username Anda di Langkah 1 dan selesaikan Langkah 2 (Input Pernyataan).';
+                document.getElementById('startQuizButton').classList.add('hidden');
+                document.getElementById('quizContent').classList.add('hidden');
+                
+                // Reset UI Tables (data will also update via listeners but this is for immediate feedback)
+                renderMonitoringTable(allEmployees, []);
+                renderLeaderboard([]);
+
+                showMessage("✅ Semua data pengisian dan papan skor berhasil direset! Aplikasi kembali ke Langkah 1.", "success");
+
+            } catch (error) {
+                console.error("Error during full data reset: ", error);
+                showMessage(`Gagal melakukan reset penuh data. Error: ${error.message}. Cek izin tulis Firestore Anda.`, "error");
+            } finally {
+                showLoading(false);
+            }
+        }
 
         // --- INITIALIZE ON PAGE LOAD ---
         window.onload = function() {
@@ -1406,11 +1499,11 @@ Buatkan satu pernyataan BOHONG yang terdengar nyata, spesifik, dan sulit ditebak
             // Pasang event listener untuk tombol Gemini
             document.getElementById('ideaHelperButton').addEventListener('click', handleIdeaHelperClick);
             document.getElementById('generateLieButton').addEventListener('click', handleGenerateLieClick);
+            
+            // Pasang event listener untuk tombol Reset
+            document.getElementById('resetAllDataButton').addEventListener('click', resetAllUserData);
         };
 
     </script>
 </body>
 </html>
-
-
-
